@@ -134,3 +134,8 @@
     color: oklch(0.82 0.18 26);
   }
 }
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}

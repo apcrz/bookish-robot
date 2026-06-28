@@ -97,7 +97,6 @@ export function VerseList({ data, loading, error }: VerseListProps) {
          <ScrollArea ref={scrollRef} className="h-[calc(100vh-108px)]">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 md:py-10">
 
-               {/* Cabeçalho do Capítulo */}
                <div className="mb-8 md:mb-12 text-center">
                   <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
                      {currentBook?.name}
@@ -110,7 +109,6 @@ export function VerseList({ data, loading, error }: VerseListProps) {
                   </Badge>
                </div>
 
-               {/* Loading */}
                {loading && (
                   <div className="space-y-6 px-2">
                      {Array.from({ length: 10 }).map((_, i) => (

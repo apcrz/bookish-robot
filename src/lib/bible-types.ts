@@ -1,3 +1,5 @@
+// src/lib/bible-types.ts
+
 export type Translation = "aa" | "acf" | "nvi";
 
 export interface BibleBook {
