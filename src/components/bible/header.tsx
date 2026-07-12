@@ -30,27 +30,6 @@ export function BibleHeader({ totalChapters }: { totalChapters: number }) {
       toggleBookmark
    } = useBibleStore();
 
-   const handleNavigateToBookmark = (bookmarkKey: string) => {
-      const parts = bookmarkKey.split("_");
-
-      const bId = parts[0];
-      const ch = parseInt(parts[1], 10);
-      const vs = parseInt(parts[2], 10);
-
-      if (bId && !isNaN(ch)) {
-         setBookId(bId);
-         setChapter(ch);
-         if (!isNaN(vs)) {
-            setHighlightedVerse(vs);
-            setTimeout(() => {
-               document.getElementById(`verse-${vs}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-            }, 200);
-         }
-      }
-   };
-
-   const getBookName = (id: string) => BOOKS.find(b => b.id === id)?.name || id;
-
    return (
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
          <div className="max-w-3xl mx-auto px-3 sm:px-4 h-14 flex items-center gap-2">
