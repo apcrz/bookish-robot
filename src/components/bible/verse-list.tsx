@@ -2,23 +2,28 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useBibleStore } from "@/lib/store";
 import { BOOKS } from "@/lib/bible-types";
+import type { ChapterSermon } from "@/lib/use-chapter-sermons";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Bookmark, Share2, Check } from "lucide-react";
+import { Bookmark, Share2, Check, NotebookPen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface VerseListProps {
    data: any;
    loading: boolean;
    error: string | null;
+   sermons: ChapterSermon[];
 }
 
-export function VerseList({ data, loading, error }: VerseListProps) {
+export function VerseList({ data, loading, error, sermons }: VerseListProps) {
+   const router = useRouter();
    const scrollRef = useRef<HTMLDivElement>(null);
    const [copiedVerse, setCopiedVerse] = useState<number | null>(null);
    const [errorVerse, setErrorVerse] = useState<number | null>(null);
@@ -36,6 +41,12 @@ export function VerseList({ data, loading, error }: VerseListProps) {
 
    const currentBook = BOOKS.find((b) => b.id === bookId);
    const verses = data?.chapters[chapter] ?? [];
+
+   const chapterSermons = sermons.filter((s) => s.verse_start == null);
+   const findSermonForVerse = (idx: number) =>
+      sermons.find(
+         (s) => s.verse_start != null && idx >= s.verse_start && idx <= (s.verse_end ?? s.verse_start)
+      );
 
    useEffect(() => {
       scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -104,9 +115,29 @@ export function VerseList({ data, loading, error }: VerseListProps) {
                   <p className="mt-1 text-xl md:text-2xl text-muted-foreground">
                      Capítulo {chapter + 1}
                   </p>
-                  <Badge variant="outline" className="mt-4 text-xs tracking-widest">
-                     {translation.toUpperCase()}
-                  </Badge>
+                  <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+                     <Badge variant="outline" className="text-xs tracking-widest">
+                        {translation.toUpperCase()}
+                     </Badge>
+
+                     {chapterSermons.length > 0 && (
+                        <Link
+                           href={
+                              chapterSermons.length === 1 ? `/sermons/${chapterSermons[0].id}` : "/sermons"
+                           }
+                        >
+                           <Badge
+                              variant="secondary"
+                              className="text-xs gap-1 cursor-pointer hover:bg-secondary/80"
+                           >
+                              <NotebookPen className="h-3 w-3" />
+                              {chapterSermons.length === 1
+                                 ? "1 sermão neste capítulo"
+                                 : `${chapterSermons.length} sermões neste capítulo`}
+                           </Badge>
+                        </Link>
+                     )}
+                  </div>
                </div>
 
                {loading && (
@@ -135,6 +166,7 @@ export function VerseList({ data, loading, error }: VerseListProps) {
                         const isHighlighted = highlightedVerse === idx;
                         const bookmarkKey = `${translation}:${bookId}:${chapter}:${idx}`;
                         const isBookmarked = bookmarks.includes(bookmarkKey);
+                        const sermonForVerse = findSermonForVerse(idx);
 
                         return (
                            <div
@@ -147,10 +179,19 @@ export function VerseList({ data, loading, error }: VerseListProps) {
                                     : "hover:bg-muted/40 md:hover:bg-muted/50"
                               )}
                            >
-                              <div className="shrink-0 w-7 pt-0.5">
+                              <div className="shrink-0 w-7 pt-0.5 flex flex-col items-center gap-1">
                                  <span className="verse-number text-base font-medium tabular-nums">
                                     {idx + 1}
                                  </span>
+                                 {sermonForVerse && (
+                                    <Link
+                                       href={`/sermons/${sermonForVerse.id}`}
+                                       onClick={(e) => e.stopPropagation()}
+                                       title="Ver sermão"
+                                    >
+                                       <NotebookPen className="h-3 w-3 text-primary" />
+                                    </Link>
+                                 )}
                               </div>
 
                               <p
@@ -208,6 +249,33 @@ export function VerseList({ data, loading, error }: VerseListProps) {
                                     </TooltipTrigger>
                                     <TooltipContent side="left">
                                        {copiedVerse === idx ? "Copiado!" : "Compartilhar"}
+                                    </TooltipContent>
+                                 </Tooltip>
+
+                                 <Tooltip>
+                                    <TooltipTrigger asChild>
+                                       <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 -mr-1"
+                                          onClick={(e) => {
+                                             e.stopPropagation();
+                                             if (sermonForVerse) {
+                                                router.push(`/sermons/${sermonForVerse.id}`);
+                                             } else {
+                                                router.push(
+                                                   `/sermons/new?translation=${translation}&bookId=${bookId}&chapter=${chapter}&verse=${idx}`
+                                                );
+                                             }
+                                          }}
+                                       >
+                                          <NotebookPen
+                                             className={cn("h-4 w-4", sermonForVerse && "text-primary")}
+                                          />
+                                       </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left">
+                                       {sermonForVerse ? "Ver sermão" : "Iniciar sermão"}
                                     </TooltipContent>
                                  </Tooltip>
                               </div>

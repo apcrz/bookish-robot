@@ -1,6 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
+import Link from "next/link";
 import { useBibleStore } from "@/lib/store";
 import { TRANSLATIONS, Translation, BOOKS } from "@/lib/bible-types";
 import { BookSelector, ChapterSelector } from "./selectors";
@@ -220,11 +221,13 @@ export function BibleHeader({ totalChapters }: { totalChapters: number }) {
 
                <Tooltip>
                   <TooltipTrigger asChild>
-                     <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <User className="h-4 w-4" />
+                     <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                        <Link href="/sermons">
+                           <User className="h-4 w-4" />
+                        </Link>
                      </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Minha conta</TooltipContent>
+                  <TooltipContent>Meus sermões</TooltipContent>
                </Tooltip>
             </div>
          </div>
