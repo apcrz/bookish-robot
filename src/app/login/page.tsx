@@ -3,7 +3,6 @@
 import {
    Suspense,
    useEffect,
-   useRef,
    useState,
    type FormEvent,
    type ReactNode,
@@ -17,15 +16,14 @@ import { Label } from "@/components/ui/label";
 import { BookOpen, MailCheck } from "lucide-react";
 
 const RESEND_SECONDS = 60;
-const CODE_LENGTH = 6;
 const DEFAULT_NEXT = "/sermons";
 
 // O passo do login vive na URL, não em useState. No PWA o usuário sai pro app de
-// e-mail pra buscar o código e o iOS descarta a aba; voltando, a URL traz o
-// e-mail e o passo de volta em vez de cair num formulário vazio.
-function codeStepUrl(email: string, next: string) {
+// e-mail e o iOS descarta a aba; voltando, a URL traz o e-mail e o passo de volta
+// em vez de cair num formulário vazio.
+function sentStepUrl(email: string, next: string) {
    const params = new URLSearchParams({
-      step: "code",
+      enviado: "1",
       email,
       t: String(Date.now()),
    });
@@ -41,6 +39,24 @@ function emailStepUrl(email: string, next: string) {
    return query ? `/login?${query}` : "/login";
 }
 
+// emailRedirectTo sobrepõe o Site URL do projeto. Derivando do origin atual, o
+// e-mail pedido em localhost volta pra localhost e o pedido em produção volta
+// pra produção — sem depender de config de dashboard estar certa.
+function callbackUrl(next: string) {
+   const url = new URL("/auth/callback", window.location.origin);
+   if (next !== DEFAULT_NEXT) url.searchParams.set("next", next);
+   return url.toString();
+}
+
+async function sendLink(email: string, next: string) {
+   const supabase = createClient();
+   // shouldCreateUser: false — sem signup self-service, usuários saem do Supabase Studio.
+   return supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false, emailRedirectTo: callbackUrl(next) },
+   });
+}
+
 function describeSendError(error: AuthError) {
    if (error.status === 429 || error.code === "over_email_send_rate_limit") {
       return "Muitos envios seguidos. Espere alguns minutos e peça de novo.";
@@ -49,16 +65,6 @@ function describeSendError(error: AuthError) {
       return "Esse e-mail não tem acesso ao app.";
    }
    return "Não consegui enviar o e-mail. Tente de novo.";
-}
-
-function describeVerifyError(error: AuthError) {
-   if (error.code === "otp_expired") {
-      return "Esse código expirou. Peça um novo abaixo.";
-   }
-   if (error.status === 429) {
-      return "Muitas tentativas seguidas. Espere um pouco.";
-   }
-   return "Código inválido.";
 }
 
 function Shell({
@@ -91,26 +97,25 @@ function Shell({
 function EmailStep({
    initialEmail,
    next,
+   linkFailed,
 }: {
    initialEmail: string;
    next: string;
+   linkFailed: boolean;
 }) {
    const router = useRouter();
    const [email, setEmail] = useState(initialEmail);
-   const [error, setError] = useState<string | null>(null);
    const [loading, setLoading] = useState(false);
+   const [error, setError] = useState<string | null>(
+      linkFailed ? "Esse link expirou ou já foi usado. Peça um novo." : null
+   );
 
    const handleSubmit = async (e: FormEvent) => {
       e.preventDefault();
       setError(null);
       setLoading(true);
 
-      const supabase = createClient();
-      // shouldCreateUser: false — sem signup self-service, usuários saem do Supabase Studio.
-      const { error } = await supabase.auth.signInWithOtp({
-         email,
-         options: { shouldCreateUser: false },
-      });
+      const { error } = await sendLink(email, next);
 
       if (error) {
          setLoading(false);
@@ -119,7 +124,7 @@ function EmailStep({
       }
 
       // Sem setLoading(false): o botão fica travado até a navegação acontecer.
-      router.replace(codeStepUrl(email, next));
+      router.replace(sentStepUrl(email, next));
    };
 
    return (
@@ -145,18 +150,18 @@ function EmailStep({
             {error && <p className="text-sm text-destructive">{error}</p>}
 
             <Button type="submit" className="w-full" disabled={loading}>
-               {loading ? "Enviando..." : "Enviar código"}
+               {loading ? "Enviando..." : "Enviar link de acesso"}
             </Button>
 
             <p className="text-xs text-muted-foreground text-center">
-               Mandamos um código de 6 dígitos por e-mail. Sem senha.
+               Mandamos um link por e-mail. Sem senha.
             </p>
          </form>
       </Shell>
    );
 }
 
-function CodeStep({
+function SentStep({
    email,
    sentAt,
    next,
@@ -166,15 +171,11 @@ function CodeStep({
    next: string;
 }) {
    const router = useRouter();
-   const [code, setCode] = useState("");
-   const [error, setError] = useState<string | null>(null);
    const [loading, setLoading] = useState(false);
+   const [error, setError] = useState<string | null>(null);
    const [cooldown, setCooldown] = useState(() =>
       Math.max(0, RESEND_SECONDS - Math.floor((Date.now() - sentAt) / 1000))
    );
-   // O auto-submit dispara no 6º dígito; a trava evita uma segunda chamada se o
-   // usuário colar por cima do código enquanto a primeira ainda está no ar.
-   const verifying = useRef(false);
 
    useEffect(() => {
       if (cooldown <= 0) return;
@@ -182,46 +183,11 @@ function CodeStep({
       return () => clearTimeout(id);
    }, [cooldown]);
 
-   const verify = async (token: string) => {
-      if (verifying.current) return;
-      verifying.current = true;
-      setError(null);
-      setLoading(true);
-
-      const supabase = createClient();
-      const { error } = await supabase.auth.verifyOtp({
-         email,
-         token,
-         type: "email",
-      });
-
-      if (error) {
-         verifying.current = false;
-         setLoading(false);
-         setCode("");
-         setError(describeVerifyError(error));
-         return;
-      }
-
-      router.push(next);
-      router.refresh();
-   };
-
-   const handleChange = (raw: string) => {
-      const digits = raw.replace(/\D/g, "").slice(0, CODE_LENGTH);
-      setCode(digits);
-      if (digits.length === CODE_LENGTH) void verify(digits);
-   };
-
    const resend = async () => {
       setError(null);
       setLoading(true);
 
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOtp({
-         email,
-         options: { shouldCreateUser: false },
-      });
+      const { error } = await sendLink(email, next);
 
       setLoading(false);
 
@@ -230,10 +196,9 @@ function CodeStep({
          return;
       }
 
-      setCode("");
       setCooldown(RESEND_SECONDS);
-      // Renova o `t` da URL pra o cooldown continuar certo se a aba for descartada.
-      router.replace(codeStepUrl(email, next));
+      // Renova o `t` da URL pro cooldown continuar certo se a aba for descartada.
+      router.replace(sentStepUrl(email, next));
    };
 
    return (
@@ -242,44 +207,20 @@ function CodeStep({
          title="Confira seu e-mail"
          subtitle={
             <>
-               Mandamos um código para{" "}
+               Mandamos um link de acesso para{" "}
                <span className="text-foreground">{email}</span>
             </>
          }
       >
-         <form
-            onSubmit={(e) => {
-               e.preventDefault();
-               void verify(code);
-            }}
-            className="space-y-4"
-         >
-            <div className="space-y-1.5">
-               <Label htmlFor="code">Código de 6 dígitos</Label>
-               <Input
-                  id="code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  autoFocus
-                  maxLength={CODE_LENGTH}
-                  placeholder="000000"
-                  required
-                  disabled={loading}
-                  value={code}
-                  onChange={(e) => handleChange(e.target.value)}
-                  className="text-center text-lg tracking-[0.5em]"
-               />
-            </div>
+         <div className="space-y-4">
+            <p className="text-sm text-muted-foreground text-center">
+               Abra o e-mail e clique em <span className="text-foreground">Sign in</span>.
+               O link vale por 1 hora e só funciona uma vez.
+            </p>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
-
-            <Button
-               type="submit"
-               className="w-full"
-               disabled={loading || code.length < CODE_LENGTH}
-            >
-               {loading ? "Entrando..." : "Entrar"}
-            </Button>
+            {error && (
+               <p className="text-sm text-destructive text-center">{error}</p>
+            )}
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
                <button
@@ -295,10 +236,14 @@ function CodeStep({
                   disabled={loading || cooldown > 0}
                   className="hover:text-foreground disabled:hover:text-muted-foreground"
                >
-                  {cooldown > 0 ? `Reenviar em ${cooldown}s` : "Reenviar código"}
+                  {loading
+                     ? "Enviando..."
+                     : cooldown > 0
+                       ? `Reenviar em ${cooldown}s`
+                       : "Reenviar link"}
                </button>
             </div>
-         </form>
+         </div>
       </Shell>
    );
 }
@@ -308,13 +253,13 @@ function LoginForm() {
 
    const next = searchParams.get("next") ?? DEFAULT_NEXT;
    const email = searchParams.get("email") ?? "";
-   // `step=code` sem e-mail não tem como funcionar (verifyOtp precisa dos dois),
-   // então cai de volta no formulário de e-mail em vez de travar numa tela morta.
-   const onCodeStep = searchParams.get("step") === "code" && email !== "";
+   // `enviado=1` sem e-mail não tem como funcionar (o reenvio precisa dele),
+   // então cai de volta no formulário em vez de travar numa tela morta.
+   const sent = searchParams.get("enviado") === "1" && email !== "";
 
-   if (onCodeStep) {
+   if (sent) {
       return (
-         <CodeStep
+         <SentStep
             key={searchParams.get("t") ?? email}
             email={email}
             sentAt={Number(searchParams.get("t")) || Date.now()}
@@ -323,7 +268,13 @@ function LoginForm() {
       );
    }
 
-   return <EmailStep initialEmail={email} next={next} />;
+   return (
+      <EmailStep
+         initialEmail={email}
+         next={next}
+         linkFailed={searchParams.get("erro") === "link"}
+      />
+   );
 }
 
 export default function LoginPage() {
