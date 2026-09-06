@@ -49,7 +49,7 @@ export function VerseList({ data, loading, error, sermons }: VerseListProps) {
       );
 
    useEffect(() => {
-      scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+      scrollRef.current?.scrollTo({ top: 0 });
    }, [chapter, bookId]);
 
    const handleShare = async (verseText: string, verseIndex: number) => {
@@ -105,7 +105,7 @@ export function VerseList({ data, loading, error, sermons }: VerseListProps) {
    };
    return (
       <main className="flex-1 overflow-hidden bg-background">
-         <ScrollArea ref={scrollRef} className="h-[calc(100vh-108px)]">
+         <ScrollArea viewportRef={scrollRef} className="h-[calc(100vh-108px)]">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 md:py-10">
 
                <div className="mb-8 md:mb-12 text-center">
