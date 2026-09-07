@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/drawer";
 import { BookOpen, Minus, Plus, Moon, Sun, User, Bookmark, X, Trash2 } from "lucide-react";
 
-export function BibleHeader({ totalChapters }: { totalChapters: number }) {
+export function BibleHeader() {
    const { theme, setTheme } = useTheme();
    const {
       translation,
@@ -41,7 +41,7 @@ export function BibleHeader({ totalChapters }: { totalChapters: number }) {
                   <BookSelector />
                </div>
 
-               <ChapterSelector totalChapters={totalChapters} />
+               <ChapterSelector />
             </div>
 
             <div className="flex items-center gap-1 shrink-0">

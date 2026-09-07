@@ -37,6 +37,34 @@ function filterAndSort(books: BookMeta[], query: string, sortMode: SortMode) {
    return filtered;
 }
 
+// Uma grade só pros dois seletores. O max-w-md é no-op no sheet lateral (320px) e
+// segura a grade no sheet de baixo, que é inset-x-0 e sem isso vira 5 quadrados
+// gigantes no desktop.
+function ChapterGrid({
+   count,
+   selectedChapter,
+   onSelect,
+}: {
+   count: number;
+   selectedChapter: number | null;
+   onSelect: (idx: number) => void;
+}) {
+   return (
+      <div className="grid grid-cols-5 gap-2 px-4 pb-8 mx-auto w-full max-w-md">
+         {Array.from({ length: count }, (_, i) => (
+            <Button
+               key={i}
+               variant={selectedChapter === i ? "default" : "outline"}
+               className="aspect-square"
+               onClick={() => onSelect(i)}
+            >
+               {i + 1}
+            </Button>
+         ))}
+      </div>
+   );
+}
+
 export function BookSelector() {
    const [open, setOpen] = useState(false);
    const [step, setStep] = useState<"books" | "chapters">("books");
@@ -187,20 +215,11 @@ export function BookSelector() {
                      </div>
                   </SheetHeader>
                   <ScrollArea className="h-[calc(100vh-92px)] mt-2">
-                     <div className="grid grid-cols-5 gap-2 px-4 pb-8">
-                        {Array.from({ length: pendingChapterCount }, (_, i) => (
-                           <Button
-                              key={i}
-                              variant={
-                                 pendingBookId === bookId && chapter === i ? "default" : "outline"
-                              }
-                              className="aspect-square"
-                              onClick={() => handleSelectChapter(i)}
-                           >
-                              {i + 1}
-                           </Button>
-                        ))}
-                     </div>
+                     <ChapterGrid
+                        count={pendingChapterCount}
+                        selectedChapter={pendingBookId === bookId ? chapter : null}
+                        onSelect={handleSelectChapter}
+                     />
                   </ScrollArea>
                </>
             )}
@@ -209,10 +228,13 @@ export function BookSelector() {
    );
 }
 
-export function ChapterSelector({ totalChapters }: { totalChapters: number }) {
+export function ChapterSelector() {
    const [open, setOpen] = useState(false);
    const { chapter, bookId, setChapter } = useBibleStore();
    const currentBook = BOOKS.find((b) => b.id === bookId);
+   // CHAPTER_COUNTS em vez do chaptersCount do JSON: o botão já nasce com o
+   // número certo, sem sumir da topbar enquanto o livro carrega.
+   const totalChapters = CHAPTER_COUNTS[bookId] ?? 0;
 
    if (totalChapters === 0) return null;
 
@@ -225,25 +247,18 @@ export function ChapterSelector({ totalChapters }: { totalChapters: number }) {
             </Button>
          </SheetTrigger>
          <SheetContent side="bottom" className="h-[60vh]">
-            <SheetHeader>
+            <SheetHeader className="mx-auto w-full max-w-md">
                <SheetTitle>Capítulos — {currentBook?.name}</SheetTitle>
             </SheetHeader>
-            <ScrollArea className="h-[calc(60vh-80px)] mt-4">
-               <div className="grid grid-cols-5 gap-2 pb-4">
-                  {Array.from({ length: totalChapters }, (_, i) => (
-                     <Button
-                        key={i}
-                        variant={chapter === i ? "default" : "outline"}
-                        className="aspect-square"
-                        onClick={() => {
-                           setChapter(i);
-                           setOpen(false);
-                        }}
-                     >
-                        {i + 1}
-                     </Button>
-                  ))}
-               </div>
+            <ScrollArea className="h-[calc(60vh-80px)] mt-2">
+               <ChapterGrid
+                  count={totalChapters}
+                  selectedChapter={chapter}
+                  onSelect={(i) => {
+                     setChapter(i);
+                     setOpen(false);
+                  }}
+               />
             </ScrollArea>
          </SheetContent>
       </Sheet>

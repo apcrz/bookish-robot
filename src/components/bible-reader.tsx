@@ -28,7 +28,7 @@ export function BibleReader() {
    return (
       <TooltipProvider>
          <div className="min-h-screen flex flex-col bg-background text-foreground">
-            <BibleHeader totalChapters={totalChapters} />
+            <BibleHeader />
             <VerseList data={data} loading={loading} error={error} sermons={sermons} />
             <BibleFooter totalChapters={totalChapters} />
          </div>
