@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useBibleStore } from "@/lib/store";
 import { useBible } from "@/lib/use-bible";
 import { useChapterSermons } from "@/lib/use-chapter-sermons";
+import { useBookmarkSync } from "@/lib/use-bookmark-sync";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BibleHeader } from "./bible/header";
 import { VerseList } from "./bible/verse-list";
@@ -15,6 +16,8 @@ export function BibleReader() {
    const { translation, bookId, chapter } = useBibleStore();
    const { data, loading, error } = useBible(translation, bookId);
    const sermons = useChapterSermons(translation, bookId, chapter);
+
+   useBookmarkSync();
    const totalChapters = data?.chaptersCount ?? 0;
 
    useEffect(() => {

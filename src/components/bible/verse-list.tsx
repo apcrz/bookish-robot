@@ -1,10 +1,10 @@
 // src/components/bible/verse-list.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useBibleStore } from "@/lib/store";
+import { bookmarkKey, useBibleStore } from "@/lib/store";
 import { BOOKS } from "@/lib/bible-types";
 import type { ChapterSermon } from "@/lib/use-chapter-sermons";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Bookmark, Share2, Check, NotebookPen } from "lucide-react";
+import { Bookmark, Copy, Check, NotebookPen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface VerseListProps {
@@ -26,7 +26,6 @@ export function VerseList({ data, loading, error, sermons }: VerseListProps) {
    const router = useRouter();
    const scrollRef = useRef<HTMLDivElement>(null);
    const [copiedVerse, setCopiedVerse] = useState<number | null>(null);
-   const [errorVerse, setErrorVerse] = useState<number | null>(null);
 
    const {
       translation,
@@ -42,65 +41,65 @@ export function VerseList({ data, loading, error, sermons }: VerseListProps) {
    const currentBook = BOOKS.find((b) => b.id === bookId);
    const verses = data?.chapters[chapter] ?? [];
 
+   // Índices favoritados deste capítulo. Set em vez de varrer a lista inteira a
+   // cada versículo, e é ele que responde se o vizinho de cima/baixo também está
+   // salvo — o que decide onde a faixa começa e termina.
+   const bookmarkedVerses = useMemo(() => {
+      const prefix = `${bookId}:${chapter}:`;
+      const indices = new Set<number>();
+      for (const b of bookmarks) {
+         if (!b.key.startsWith(prefix)) continue;
+         const idx = Number(b.key.slice(prefix.length));
+         if (Number.isInteger(idx)) indices.add(idx);
+      }
+      return indices;
+   }, [bookmarks, bookId, chapter]);
+
    const chapterSermons = sermons.filter((s) => s.verse_start == null);
    const findSermonForVerse = (idx: number) =>
       sermons.find(
          (s) => s.verse_start != null && idx >= s.verse_start && idx <= (s.verse_end ?? s.verse_start)
       );
 
+   // Trocou de capítulo: volta pro topo. A não ser que a navegação tenha vindo
+   // de um favorito, que já traz um versículo alvo — aí manda o efeito de baixo.
+   // getState() em vez do valor do render: só interessa o instante da troca.
    useEffect(() => {
+      if (useBibleStore.getState().highlightedVerse !== null) return;
       scrollRef.current?.scrollTo({ top: 0 });
    }, [chapter, bookId]);
 
-   const handleShare = async (verseText: string, verseIndex: number) => {
+   // Rolar até o versículo é de quem é dono do container de scroll. Só rola se
+   // ele não estiver visível, senão tocar num versículo à vista faria a tela
+   // pular sozinha. Depende de `data` pra reagir quando o livro novo chega.
+   useEffect(() => {
+      if (highlightedVerse === null) return;
+
+      const viewport = scrollRef.current;
+      const el = document.getElementById(`verse-${highlightedVerse}`);
+      if (!viewport || !el) return;
+
+      const elBox = el.getBoundingClientRect();
+      const viewBox = viewport.getBoundingClientRect();
+      if (elBox.top >= viewBox.top && elBox.bottom <= viewBox.bottom) return;
+
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+   }, [highlightedVerse, chapter, bookId, data]);
+
+   // Copiar, não compartilhar: isso é pra colar o versículo num sermão seu,
+   // não pra mandar pra fora. Web Share e os fallbacks de execCommand saíram.
+   const handleCopy = async (verseText: string, verseIndex: number) => {
       const bookName = currentBook?.name || "Bíblia";
       const reference = `${bookName} ${chapter + 1}:${verseIndex + 1}`;
-      const shareText = `"${verseText}"\n— ${reference} (${translation.toUpperCase()})`;
-
-      const shareData = {
-         title: reference,
-         text: shareText,
-      };
+      const text = `"${verseText}"\n— ${reference} (${translation.toUpperCase()})`;
 
       try {
-         if (navigator.canShare && navigator.canShare(shareData)) {
-            await navigator.share(shareData);
-            return;
-         }
-
-         if (navigator.clipboard && window.isSecureContext) {
-            await navigator.clipboard.writeText(shareText);
-            setCopiedVerse(verseIndex);
-            setTimeout(() => setCopiedVerse(null), 1800);
-            return;
-         }
-
-         const textArea = document.createElement("textarea");
-         textArea.value = shareText;
-         textArea.style.position = "fixed";
-         textArea.style.left = "-999999px";
-         textArea.style.top = "-999999px";
-         document.body.appendChild(textArea);
-         textArea.focus();
-         textArea.select();
-
-         const successful = document.execCommand("copy");
-         document.body.removeChild(textArea);
-
-         if (successful) {
-            setCopiedVerse(verseIndex);
-            setTimeout(() => setCopiedVerse(null), 1800);
-         } else {
-            throw new Error("ExecCommand failed");
-         }
-
-      } catch (error: any) {
-         console.warn("Falha ao compartilhar/copiar:", error);
-
-         if (error?.name === "AbortError") return;
-
-         setErrorVerse(verseIndex);
-         setTimeout(() => setErrorVerse(null), 2500);
+         await navigator.clipboard.writeText(text);
+         setCopiedVerse(verseIndex);
+         setTimeout(() => setCopiedVerse(null), 1800);
+      } catch {
+         // Sem clipboard não tem plano B honesto — melhor não dar o check
+         // verde do que fingir que copiou.
       }
    };
    return (
@@ -161,22 +160,38 @@ export function VerseList({ data, loading, error, sermons }: VerseListProps) {
                )}
 
                {!loading && !error && (
-                  <div className="space-y-5 md:space-y-8">
+                  <div>
                      {verses.map((verse: string, idx: number) => {
                         const isHighlighted = highlightedVerse === idx;
-                        const bookmarkKey = `${translation}:${bookId}:${chapter}:${idx}`;
-                        const isBookmarked = bookmarks.includes(bookmarkKey);
+                        const key = bookmarkKey(bookId, chapter, idx);
+                        const isBookmarked = bookmarkedVerses.has(idx);
+                        const prevBookmarked = bookmarkedVerses.has(idx - 1);
+                        const nextBookmarked = bookmarkedVerses.has(idx + 1);
                         const sermonForVerse = findSermonForVerse(idx);
 
                         return (
                            <div
                               key={idx}
+                              id={`verse-${idx}`}
                               onClick={() => setHighlightedVerse(isHighlighted ? null : idx)}
                               className={cn(
-                                 "group relative flex gap-4 rounded-xl px-4 py-5 transition-all active:bg-muted/60",
-                                 isHighlighted
-                                    ? "bg-primary/10 dark:bg-primary/15 border-l-4 border-primary"
-                                    : "hover:bg-muted/40 md:hover:bg-muted/50"
+                                 "group relative flex gap-4 px-4 py-5 transition-all active:bg-muted/60",
+                                 // Borda em todos, transparente por padrão: favoritar só troca a
+                                 // cor, então o texto não pula 4px pro lado ao marcar/desmarcar.
+                                 "border-l-4 border-transparent",
+                                 // O vão entre favoritos contíguos some. É isso que transforma as
+                                 // bordas soltas numa faixa só.
+                                 idx > 0 && !(isBookmarked && prevBookmarked) && "mt-5 md:mt-8",
+                                 isBookmarked
+                                    ? "border-primary bg-primary/5 dark:bg-primary/10"
+                                    : "hover:bg-muted/40 md:hover:bg-muted/50",
+                                 // Só as pontas do bloco arredondam; o miolo fica reto pra emendar.
+                                 isBookmarked
+                                    ? cn(!prevBookmarked && "rounded-t-xl", !nextBookmarked && "rounded-b-xl")
+                                    : "rounded-xl",
+                                 // Destaque é estado passageiro (um toque), então mora no fundo. A
+                                 // borda ficou reservada pro favorito, que é permanente.
+                                 isHighlighted && "bg-primary/15 dark:bg-primary/20"
                               )}
                            >
                               <div className="shrink-0 w-7 pt-0.5 flex flex-col items-center gap-1">
@@ -215,7 +230,7 @@ export function VerseList({ data, loading, error, sermons }: VerseListProps) {
                                           className="h-8 w-8 -mr-1"
                                           onClick={(e) => {
                                              e.stopPropagation();
-                                             toggleBookmark(bookmarkKey);
+                                             toggleBookmark(key, verse, translation);
                                           }}
                                        >
                                           <Bookmark
@@ -237,18 +252,18 @@ export function VerseList({ data, loading, error, sermons }: VerseListProps) {
                                           className="h-8 w-8 -mr-1"
                                           onClick={(e) => {
                                              e.stopPropagation();
-                                             handleShare(verse, idx);
+                                             handleCopy(verse, idx);
                                           }}
                                        >
                                           {copiedVerse === idx ? (
                                              <Check className="h-4 w-4 text-green-500" />
                                           ) : (
-                                             <Share2 className="h-4 w-4" />
+                                             <Copy className="h-4 w-4" />
                                           )}
                                        </Button>
                                     </TooltipTrigger>
                                     <TooltipContent side="left">
-                                       {copiedVerse === idx ? "Copiado!" : "Compartilhar"}
+                                       {copiedVerse === idx ? "Copiado!" : "Copiar"}
                                     </TooltipContent>
                                  </Tooltip>
 

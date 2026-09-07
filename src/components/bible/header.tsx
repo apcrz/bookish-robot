@@ -28,7 +28,7 @@ export function BibleHeader() {
       setBookId,
       setChapter,
       setHighlightedVerse,
-      toggleBookmark
+      removeBookmark
    } = useBibleStore();
 
    return (
@@ -123,24 +123,27 @@ export function BibleHeader() {
                               </p>
                            </div>
                         ) : (
-                           bookmarks.map((key) => {
-                              // Corrigido para o seu formato real: "nvi:rm:0:0"
-                              const parts = key.split(":");
-                              const transId = parts[0];
-                              const bId = parts[1];
-                              const chZeroIndexed = parseInt(parts[2], 10);
-                              const vsZeroIndexed = parseInt(parts[3], 10);
+                           [...bookmarks]
+                              // Mais novo primeiro: o drawer virou a caixa de
+                              // entrada do que foi capturado no celular.
+                              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                              .map((bookmark) => {
+                              // Formato da chave: "rm:0:0" — sem tradução.
+                              const parts = bookmark.key.split(":");
+                              const bId = parts[0];
+                              const chZeroIndexed = parseInt(parts[1], 10);
+                              const vsZeroIndexed = parseInt(parts[2], 10);
 
                               const bookMeta = BOOKS.find((b) => b.id === bId);
                               const isNT = bookMeta?.testament === "NT";
 
-                              // Se o seu componente de texto renderiza os IDs dos versículos como 1-indexed (ex: id="verse-1")
+                              // Só pra exibição: o dado é 0-indexed ponta a ponta.
                               const displayChapter = chZeroIndexed + 1;
                               const displayVerse = vsZeroIndexed + 1;
 
                               return (
                                  <div
-                                    key={key}
+                                    key={bookmark.key}
                                     className={`group relative flex items-center justify-between p-3 rounded-r-lg border border-l-2 bg-card hover:bg-accent/40 transition-all shadow-sm ${isNT ? "border-l-sky-500/80" : "border-l-amber-600/80"
                                        }`}
                                  >
@@ -150,15 +153,9 @@ export function BibleHeader() {
                                           onClick={() => {
                                              setBookId(bId);
                                              setChapter(chZeroIndexed);
-                                             if (!isNaN(vsZeroIndexed)) {
-                                                // Passa o número correto para o highlight (ajuste se seu store usar 0-indexed no highlight)
-                                                setHighlightedVerse(displayVerse);
-                                                setTimeout(() => {
-                                                   document
-                                                      .getElementById(`verse-${displayVerse}`)
-                                                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                                }, 200);
-                                             }
+                                             // 0-indexed, que é como o verse-list compara.
+                                             // Quem rola até ele é o próprio verse-list.
+                                             if (!isNaN(vsZeroIndexed)) setHighlightedVerse(vsZeroIndexed);
                                           }}
                                        >
                                           <div className="flex items-center gap-1.5 flex-wrap mb-1">
@@ -177,11 +174,11 @@ export function BibleHeader() {
                                              </span>
 
                                              <span className="text-[9px] font-mono font-medium uppercase bg-muted text-muted-foreground px-1.5 py-0.5 rounded border">
-                                                {transId}
+                                                {bookmark.translation}
                                              </span>
                                           </div>
-                                          <p className="text-xs text-muted-foreground/80 truncate">
-                                             Ir para este capítulo
+                                          <p className="text-xs text-muted-foreground/80 line-clamp-2">
+                                             {bookmark.text || "Ir para este capítulo"}
                                           </p>
                                        </div>
                                     </DrawerClose>
@@ -192,7 +189,7 @@ export function BibleHeader() {
                                        className="h-8 w-8 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 rounded-md opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0"
                                        onClick={(e) => {
                                           e.stopPropagation();
-                                          toggleBookmark(key);
+                                          removeBookmark(bookmark.key);
                                        }}
                                     >
                                        <Trash2 className="h-3.5 w-3.5" />
