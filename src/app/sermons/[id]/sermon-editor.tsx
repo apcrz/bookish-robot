@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { BOOKS } from "@/lib/bible-types";
 import type { Sermon } from "@/lib/sermons";
 import { cn } from "@/lib/utils";
+import { confirmDiscard, useUnsavedChangesWarning } from "@/lib/use-unsaved-changes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,12 +69,20 @@ export function SermonEditor({ sermon }: { sermon: Sermon }) {
    const [sharing, setSharing] = useState(false);
    const [linkCopied, setLinkCopied] = useState(false);
    const [origin, setOrigin] = useState("");
+   const [error, setError] = useState<string | null>(null);
+
+   const dirty =
+      mode === "edit" &&
+      (title !== savedSermon.title || content !== savedSermon.content || status !== savedSermon.status);
+
+   useUnsavedChangesWarning(dirty);
 
    useEffect(() => {
       setOrigin(window.location.origin);
    }, []);
 
    const handleEdit = () => {
+      setError(null);
       setTitle(savedSermon.title);
       setContent(savedSermon.content);
       setStatus(savedSermon.status);
@@ -81,6 +90,8 @@ export function SermonEditor({ sermon }: { sermon: Sermon }) {
    };
 
    const handleCancel = () => {
+      if (!confirmDiscard(dirty)) return;
+      setError(null);
       setTitle(savedSermon.title);
       setContent(savedSermon.content);
       setStatus(savedSermon.status);
@@ -91,7 +102,16 @@ export function SermonEditor({ sermon }: { sermon: Sermon }) {
       e.preventDefault();
       setSaving(true);
       setJustSaved(false);
-      await updateSermonAction(sermon.id, { title, content, status });
+      setError(null);
+
+      try {
+         await updateSermonAction(sermon.id, { title, content, status });
+      } catch {
+         setSaving(false);
+         setError("Não foi possível salvar. Suas alterações continuam aqui; tente de novo.");
+         return;
+      }
+
       setSavedSermon((s) => ({ ...s, title, content, status }));
       setSaving(false);
       setJustSaved(true);
@@ -99,19 +119,43 @@ export function SermonEditor({ sermon }: { sermon: Sermon }) {
       setMode(status === "draft" ? "edit" : "view");
    };
 
+   const handleLeave = (e: MouseEvent<HTMLAnchorElement>) => {
+      if (!confirmDiscard(dirty)) e.preventDefault();
+   };
+
    const handleDelete = async () => {
       if (!window.confirm("Excluir este sermão? Essa ação não pode ser desfeita.")) return;
       setDeleting(true);
-      await deleteSermonAction(sermon.id);
+      setError(null);
+
+      try {
+         await deleteSermonAction(sermon.id);
+      } catch {
+         setDeleting(false);
+         setError("Não foi possível excluir o sermão. Tente de novo.");
+         return;
+      }
+
       router.push("/sermons");
    };
 
    const handleTogglePublic = async () => {
       setSharing(true);
+      setError(null);
       const nextPublic = !savedSermon.is_public;
-      await updateSermonAction(sermon.id, { is_public: nextPublic });
-      setSavedSermon((s) => ({ ...s, is_public: nextPublic }));
-      setSharing(false);
+
+      try {
+         await updateSermonAction(sermon.id, { is_public: nextPublic });
+         setSavedSermon((s) => ({ ...s, is_public: nextPublic }));
+      } catch {
+         setError(
+            nextPublic
+               ? "Não foi possível tornar o sermão público. Tente de novo."
+               : "Não foi possível tornar o sermão privado. Tente de novo."
+         );
+      } finally {
+         setSharing(false);
+      }
    };
 
    const handleCopyLink = async () => {
@@ -176,6 +220,8 @@ export function SermonEditor({ sermon }: { sermon: Sermon }) {
                   )}
                </div>
 
+               {error && <p className="text-sm text-destructive mb-4">{error}</p>}
+
                {savedSermon.is_public && (
                   <div className="flex items-center gap-2 mb-8 flex-wrap">
                      <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-full">
@@ -204,7 +250,11 @@ export function SermonEditor({ sermon }: { sermon: Sermon }) {
          <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
             <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
                <div className="flex items-center gap-3 min-w-0">
-                  <Link href="/sermons" className="text-muted-foreground hover:text-foreground shrink-0">
+                  <Link
+                     href="/sermons"
+                     onClick={handleLeave}
+                     className="text-muted-foreground hover:text-foreground shrink-0"
+                  >
                      <ArrowLeft className="h-4 w-4" />
                   </Link>
                   <h1 className="text-sm font-medium truncate">{formatPassage(sermon)}</h1>
@@ -259,6 +309,8 @@ export function SermonEditor({ sermon }: { sermon: Sermon }) {
                      minHeightClassName="min-h-100"
                   />
                </div>
+
+               {error && <p className="text-sm text-destructive">{error}</p>}
 
                <div className="flex gap-2">
                   <Button type="submit" disabled={saving}>

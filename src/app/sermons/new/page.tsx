@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BOOKS, type Translation } from "@/lib/bible-types";
+import { confirmDiscard, useUnsavedChangesWarning } from "@/lib/use-unsaved-changes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +30,14 @@ function NewSermonForm() {
    const [content, setContent] = useState("");
    const [saving, setSaving] = useState(false);
    const [error, setError] = useState<string | null>(null);
+
+   // Depois de criar, o router.push é navegação interna e não esbarra no aviso.
+   const dirty = !saving && (title.trim() !== "" || content.trim() !== "");
+   useUnsavedChangesWarning(dirty);
+
+   const handleLeave = (e: MouseEvent<HTMLAnchorElement>) => {
+      if (!confirmDiscard(dirty)) e.preventDefault();
+   };
 
    const bookName = BOOKS.find((b) => b.id === bookId)?.name ?? bookId;
 
@@ -58,7 +67,7 @@ function NewSermonForm() {
       <div className="min-h-screen bg-background">
          <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
             <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-               <Link href="/sermons" className="text-muted-foreground hover:text-foreground">
+               <Link href="/sermons" onClick={handleLeave} className="text-muted-foreground hover:text-foreground">
                   <ArrowLeft className="h-4 w-4" />
                </Link>
                <h1 className="text-sm font-medium">Novo sermão</h1>
